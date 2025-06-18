@@ -24,8 +24,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- CONSTANTES DE CONFIGURAÇÃO ---
-TOKEN = "SEU_TOKEN_AQUI"
-PALAVRA_PASSE_GLOBAL = "FAMILIA2025" # Mude para sua senha de acesso
+TOKEN = "8157010184:AAH1tOloCjmcXl5820q-DzSADFOpjK8CFwQ"
+PALAVRA_PASSE_GLOBAL = "GUS2025" # Mude para sua senha de acesso
 
 # --- ESTADOS DA CONVERSA DE REGISTRO ---
 ASK_PASSPHRASE, ASK_USERNAME, ASK_PASSWORD = range(3)
