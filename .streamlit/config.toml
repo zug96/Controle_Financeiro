@@ -1,0 +1,15 @@
+[theme]
+# Cor primária para elementos interativos
+primaryColor="#7928CA"
+
+# Cor de fundo principal
+backgroundColor="#0E1117"
+
+# Cor de fundo de elementos como a barra lateral
+secondaryBackgroundColor="#1C1E26"
+
+# Cor do texto principal
+textColor="#FAFAFA"
+
+# Fonte a ser usada
+font="sans serif"

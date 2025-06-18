@@ -1,0 +1,14 @@
+# Arquivos de ambiente virtual
+venv/
+env/
+
+# Arquivos de cache e compilados do Python
+__pycache__/
+*.pyc
+
+# Arquivos de dados do usuário - MUITO IMPORTANTE!
+*.json
+
+# Arquivos do sistema operacional (opcional, mas boa prática)
+.DS_Store
+Thumbs.db
