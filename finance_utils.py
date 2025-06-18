@@ -1,118 +1,138 @@
-import json
-from pathlib import Path
+import os
+import streamlit as st
+from supabase import create_client, Client
+import bcrypt
 from datetime import datetime
-import uuid
-import bcrypt # Importa a nova biblioteca
 
-# --- ARQUIVOS DE DADOS ---
-CATEGORIAS_ARQUIVO = Path("categorias.json")
-CREDENCIAIS_ARQUIVO = Path("credenciais.json")
-
-
-# --- FUNÇÕES GLOBAIS (Categorias) ---
-def carregar_categorias():
-    if CATEGORIAS_ARQUIVO.exists():
-        with open(CATEGORIAS_ARQUIVO, "r", encoding="utf-8") as f:
-            try: return json.load(f)
-            except json.JSONDecodeError: return []
-    return []
-
-def salvar_categorias(categorias):
-    with open(CATEGORIAS_ARQUIVO, "w", encoding="utf-8") as f:
-        json.dump(sorted(categorias), f, indent=2, ensure_ascii=False)
-
+# --- CONEXÃO COM O SUPABASE ---
+try:
+    # Tenta pegar as variáveis de ambiente (para o deploy do bot)
+    # Se não encontrar, tenta pegar do st.secrets (para o deploy do Streamlit)
+    url: str = os.environ.get("SUPABASE_URL") or st.secrets["SUPABASE_URL"]
+    key: str = os.environ.get("SUPABASE_KEY") or st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(url, key)
+except Exception:
+    # Se nenhuma das duas funcionar, mostra o erro no app Streamlit se ele estiver rodando
+    if 'st' in globals():
+        st.error("Erro fatal ao conectar com o Supabase. Verifique as credenciais de ambiente ou do secrets.toml")
+    supabase = None
 
 # --- FUNÇÕES DE AUTENTICAÇÃO E USUÁRIO ---
-def _get_caminho_arquivo_usuario(tipo: str, username: str) -> Path:
-    """Função interna para gerar nomes de arquivo padronizados."""
-    if not username or not isinstance(username, str):
-        raise ValueError("Username inválido.")
-    return Path(f"{tipo}_{username.lower().strip()}.json")
-
-def carregar_credenciais():
-    """Carrega as credenciais de todos os usuários."""
-    if CREDENCIAIS_ARQUIVO.exists():
-        with open(CREDENCIAIS_ARQUIVO, "r", encoding="utf-8") as f:
-            try: return json.load(f)
-            except json.JSONDecodeError: return {}
-    return {}
-
-def salvar_credenciais(credenciais):
-    """Salva o dicionário de credenciais."""
-    with open(CREDENCIAIS_ARQUIVO, "w", encoding="utf-8") as f:
-        json.dump(credenciais, f, indent=2)
 
 def registrar_novo_usuario(username, senha_texto_puro):
-    """Registra um novo usuário com senha em hash."""
-    credenciais = carregar_credenciais()
     username_lower = username.lower()
-
-    if username_lower in credenciais:
+    response = supabase.table('usuarios').select('id').eq('username', username_lower).execute()
+    if response.data:
         return False, "Usuário já existe."
-
-    # Gera o hash da senha
     senha_bytes = senha_texto_puro.encode('utf-8')
-    hash_senha = bcrypt.hashpw(senha_bytes, bcrypt.gensalt())
-    
-    # Armazena o hash como string (decodificando de bytes)
-    credenciais[username_lower] = hash_senha.decode('utf-8')
-    salvar_credenciais(credenciais)
-    return True, "Usuário registrado com sucesso."
+    hash_senha = bcrypt.hashpw(senha_bytes, bcrypt.gensalt()).decode('utf-8')
+    response_insert = supabase.table('usuarios').insert({'username': username_lower, 'senha_hash': hash_senha}).execute()
+    return (True, "Usuário registrado com sucesso.") if response_insert.data else (False, "Erro ao registrar usuário.")
 
 def verificar_senha(username, senha_texto_puro):
-    """Verifica se a senha fornecida corresponde ao hash armazenado."""
-    credenciais = carregar_credenciais()
     username_lower = username.lower()
+    response = supabase.table('usuarios').select('senha_hash').eq('username', username_lower).execute()
+    if not response.data: return False
+    hash_armazenado = response.data[0]['senha_hash'].encode('utf-8')
+    senha_a_verificar = senha_texto_puro.encode('utf-8')
+    return bcrypt.checkpw(senha_a_verificar, hash_armazenado)
 
-    if username_lower not in credenciais:
-        return False # Usuário não encontrado
+def get_user_id(username):
+    response = supabase.table('usuarios').select('id').eq('username', username.lower()).execute()
+    return response.data[0]['id'] if response.data else None
 
-    hash_armazenado_str = credenciais[username_lower]
-    hash_armazenado_bytes = hash_armazenado_str.encode('utf-8')
-    
-    senha_bytes = senha_texto_puro.encode('utf-8')
+# --- FUNÇÕES DE CATEGORIAS ---
 
-    return bcrypt.checkpw(senha_bytes, hash_armazenado_bytes)
+def carregar_categorias():
+    response = supabase.table('categorias').select('id, nome').order('nome').execute()
+    return response.data if response.data else []
 
-# --- FUNÇÕES POR USUÁRIO (Dados Financeiros) ---
+def get_categoria_id(nome_categoria):
+    response = supabase.table('categorias').select('id').eq('nome', nome_categoria).execute()
+    return response.data[0]['id'] if response.data else None
+
+# --- FUNÇÕES DE DADOS FINANCEIROS ---
+
 def carregar_dados(username: str):
-    arquivo_usuario = _get_caminho_arquivo_usuario("transacoes", username)
-    if arquivo_usuario.exists():
-        with open(arquivo_usuario, "r", encoding="utf-8") as f:
-            try: return json.load(f)
-            except json.JSONDecodeError: return []
-    return []
+    user_id = get_user_id(username)
+    if not user_id: return []
+    response = supabase.table('transacoes').select('id, data_transacao, valor, descricao, tipo, categorias(nome)').eq('user_id', user_id).order('data_transacao', desc=True).execute()
+    dados_formatados = []
+    if response.data:
+        for item in response.data:
+            dados_formatados.append({
+                "id": item['id'], "data": item['data_transacao'], "valor": item['valor'],
+                "categoria": item['categorias']['nome'] if item.get('categorias') else 'N/A',
+                "descricao": item['descricao'], "tipo": item['tipo']
+            })
+    return dados_formatados
 
-def salvar_dados(dados: list, username: str):
-    arquivo_usuario = _get_caminho_arquivo_usuario("transacoes", username)
-    with open(arquivo_usuario, "w", encoding="utf-8") as f:
-        json.dump(dados, f, indent=2, ensure_ascii=False)
-
-def adicionar_transacao(username: str, valor: float, categoria: str, descricao: str, tipo: str, data_str=None):
-    dados = carregar_dados(username)
-    data = data_str if data_str else datetime.now().strftime("%Y-%m-%d")
-    nova_transacao = {"id": str(uuid.uuid4()), "data": data, "valor": valor, "categoria": categoria, "descricao": descricao, "tipo": tipo}
-    dados.append(nova_transacao)
-    salvar_dados(dados, username)
-    print(f"Transação adicionada para {username}: {nova_transacao}")
+def adicionar_transacao(username: str, valor: float, categoria_nome: str, descricao: str, tipo: str, data_str=None):
+    user_id = get_user_id(username)
+    categoria_id = get_categoria_id(categoria_nome)
+    if not user_id or not categoria_id: return False
+    data_transacao = data_str if data_str else datetime.now().strftime("%Y-%m-%d")
+    response = supabase.table('transacoes').insert({
+        'user_id': user_id, 'categoria_id': categoria_id, 'valor': valor,
+        'descricao': descricao, 'tipo': tipo, 'data_transacao': data_transacao
+    }).execute()
+    return True if response.data else False
 
 def deletar_transacao(username: str, id_transacao: str):
-    dados = carregar_dados(username)
-    dados_filtrados = [t for t in dados if t.get('id') != id_transacao]
-    if len(dados_filtrados) < len(dados):
-        salvar_dados(dados_filtrados, username)
-        return True
-    return False
+    user_id = get_user_id(username)
+    if not user_id: return False
+    # Garante que um usuário só possa deletar suas próprias transações
+    response = supabase.table('transacoes').delete().eq('id', id_transacao).eq('user_id', user_id).execute()
+    return True if response.data else False
 
 def carregar_orcamentos(username: str):
-    arquivo_usuario = _get_caminho_arquivo_usuario("orcamentos", username)
-    if arquivo_usuario.exists():
-        with open(arquivo_usuario, "r", encoding="utf-8") as f:
-            try: return json.load(f)
-            except json.JSONDecodeError: return {}
-    return {}
+    user_id = get_user_id(username)
+    if not user_id: return {}
+    hoje = datetime.now()
+    response = supabase.table('orcamentos').select('valor, categorias(nome)').eq('user_id', user_id).eq('ano', hoje.year).eq('mes', hoje.month).execute()
+    orcamentos = {}
+    if response.data:
+        for item in response.data:
+            orcamentos[item['categorias']['nome']] = item['valor']
+    return orcamentos
 
 def salvar_orcamentos(orcamentos: dict, username: str):
-    arquivo_usuario = _get_caminho_arquivo_usuario("orcamentos", username)
-    with open(arquivo_usuario, "w", encoding="utf-8") as f:
-        json.dump(orcamentos, f, indent=2, ensure_ascii=False)
+    user_id = get_user_id(username)
+    if not user_id: return False
+    hoje = datetime.now()
+    
+    registros_para_upsert = []
+    for nome_cat, valor_orc in orcamentos.items():
+        cat_id = get_categoria_id(nome_cat)
+        if cat_id:
+            registros_para_upsert.append({
+                'user_id': user_id,
+                'categoria_id': cat_id,
+                'mes': hoje.month,
+                'ano': hoje.year,
+                'valor': valor_orc
+            })
+    
+    if registros_para_upsert:
+        # Upsert irá inserir novos ou atualizar existentes com base na chave única da tabela
+        response = supabase.table('orcamentos').upsert(registros_para_upsert).execute()
+        return True if response.data else False
+    return True # Retorna True se não havia nada para salvar
+
+# Adicione estas duas funções ao final de finance_utils.py
+
+def get_user_from_telegram_id(telegram_id: int):
+    """Busca o username de uma persona usando o ID do Telegram."""
+    response = supabase.table('telegram_map').select('usuarios(username)').eq('telegram_id', telegram_id).execute()
+    if response.data:
+        return response.data[0]['usuarios']['username']
+    return None
+
+def map_telegram_id_to_user(telegram_id: int, username: str):
+    """Associa um ID do Telegram a uma persona no banco de dados."""
+    user_id = get_user_id(username)
+    if not user_id:
+        return False
+    # Upsert para criar a associação ou atualizar se já existir
+    response = supabase.table('telegram_map').upsert({'telegram_id': telegram_id, 'user_id': user_id}).execute()
+    return True if response.data else False
