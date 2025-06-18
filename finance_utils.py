@@ -136,3 +136,20 @@ def map_telegram_id_to_user(telegram_id: int, username: str):
     # Upsert para criar a associação ou atualizar se já existir
     response = supabase.table('telegram_map').upsert({'telegram_id': telegram_id, 'user_id': user_id}).execute()
     return True if response.data else False
+
+# Adicione esta função ao final de finance_utils.py
+
+def adicionar_categoria(nome_categoria: str):
+    """Adiciona uma nova categoria no banco de dados, se ela não existir."""
+    nome_formatado = nome_categoria.strip().title()
+
+    # Verifica se a categoria já existe
+    response_select = supabase.table('categorias').select('id').eq('nome', nome_formatado).execute()
+    if response_select.data:
+        return False, "Essa categoria já existe."
+
+    # Insere a nova categoria
+    response_insert = supabase.table('categorias').insert({'nome': nome_formatado}).execute()
+    if response_insert.data:
+        return True, "Categoria adicionada com sucesso."
+    return False, "Erro ao adicionar categoria no banco de dados."
