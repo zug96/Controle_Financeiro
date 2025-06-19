@@ -1,8 +1,4 @@
 import streamlit as st
-
-# Adicione esta linha para teste
-st.write(st.secrets.to_dict())
-
 import pandas as pd
 from datetime import datetime
 import plotly.express as px
