@@ -1,3 +1,5 @@
+# Arquivo .gitignore
+
 # Arquivos de ambiente virtual
 venv/
 env/
@@ -13,8 +15,12 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Ignorar arquivos de ambiente com segredos
-.env
-
 # Ignorar arquivos de lock temporários do Excel/LibreOffice
 .~lock.*
+
+# Arquivos de ambiente com segredos
+.env
+/.streamlit/secrets.toml
+
+# Arquivos de credenciais do Google (se aplicável)
+credenciais.json
